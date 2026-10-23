@@ -1,0 +1,114 @@
+:root {
+  --ink: #1f1f1f;
+  --paper: #f7f5ef;
+  --accent: #b23a2e;
+  --good: #2f8a44;
+  --bad: #b23a2e;
+  --gold: #c9971c;
+
+  /* Font scale */
+  --font-xs:  0.65rem;   /* tiny labels, tags */
+  --font-sm:  0.72rem;   /* secondary text */
+  --font-ui:  0.8rem;    /* standard UI text */
+  --font-body: 0.85rem;  /* body / card text */
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Warm UI tone (brown family) */
+  --tone-warm:  #5a4020;
+  --tone-muted: #9a8060;
+
+  /* Parchment / UI surfaces */
+  --surface-card:      #fbf7ec;
+  --surface-btn:       #f4eddd;
+  --surface-btn-hover: #eadfca;
+  --border-input:      #8f7d56;
+  --border-topbar:     #d7c7a1;
+  --border-card:       #c5b08a;
+
+  /* Tooltip */
+  --tooltip-bg:     #2a1f0f;
+  --tooltip-fg:     #f5ead0;
+
+  /* Player palette — base color + light */
+  --player-P1: #2d6a9f; --player-P1-light: #d6e7f7;
+  --player-P2: #c0392b; --player-P2-light: #f8dcd8;
+  --player-P3: #27ae60; --player-P3-light: #d5f2e1;
+  --player-P4: #e67e22; --player-P4-light: #fbe5cf;
+  --player-P5: #8e44ad; --player-P5-light: #ecdcf3;
+  --player-P6: #16a085; --player-P6-light: #d0efe9;
+
+  /* Genre bands */
+  --genre-ACTION:  #c0392b;
+  --genre-COMEDY:  #d9a011;
+  --genre-DRAMA:   #5b4a8a;
+  --genre-HORROR:  #3a3a3a;
+  --genre-SCIFI:   #1f7a8c;
+  --genre-FAMILY:  #3a9a4a;
+  --genre-ROMANCE: #d4587a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 20% 15%, #fff9d8 0%, transparent 28%),
+    radial-gradient(circle at 80% 10%, #ffd8c9 0%, transparent 32%),
+    linear-gradient(160deg, #f3ead2 0%, #f7f5ef 65%, #efe3c4 100%);
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+h2, h3, h4 { color: var(--tone-warm); margin: 0 0 0.4rem; }
+h2 { font-size: 1rem; }
+h3 { font-size: 0.9rem; }
+h4 { font-size: 0.8rem; }
+
+button, select, input {
+  font: inherit;
+  font-size: var(--font-ui);
+}
+
+button {
+  background: var(--surface-btn);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  color: var(--ink);
+}
+button:hover:not(:disabled) { background: var(--surface-btn-hover); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+button.primary {
+  background: #e8a020;
+  border-color: #a06a10;
+  color: #2a1a00;
+  font-weight: 700;
+}
+button.primary:hover:not(:disabled) { background: #c98010; }
+
+button.small { padding: 0.15rem 0.45rem; font-size: var(--font-sm); }
+button.link { background: none; border: none; padding: 0; color: var(--player-P1); text-decoration: underline; }
+
+select, input[type="text"], input[type="number"] {
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.35rem;
+  background: #fff;
+}
+input[type="number"] { width: 4.5rem; }
+
+.hidden { display: none !important; }
+.muted { color: var(--tone-muted); }
+.good { color: var(--good); }
+.bad { color: var(--bad); }
+.small { font-size: var(--font-sm); }

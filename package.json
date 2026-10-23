@@ -1,0 +1,12 @@
+{
+  "name": "ic-studio-boss",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/sim.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

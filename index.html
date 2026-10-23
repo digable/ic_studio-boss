@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>IC Studio Boss</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/layout.css" />
+    <link rel="stylesheet" href="styles/components.css" />
+  </head>
+  <body data-tab="studio">
+    <header class="topbar">
+      <h1>🎬 IC Studio Boss</h1>
+      <p class="subtitle" id="topbarStatus">Run a movie studio. Out-deal your rivals.</p>
+      <span class="topbar-spacer"></span>
+      <div class="topbar-actions">
+        <span id="roomCode" class="room-code hidden"></span>
+        <button id="rulesBtn" class="small">How to play</button>
+        <button id="quitBtn" class="small hidden">Leave game</button>
+      </div>
+    </header>
+
+    <!-- Title / setup -->
+    <section id="titleScreen" class="title-screen">
+      <div class="title-hero">
+        <h2>IC STUDIO BOSS</h2>
+        <p>Everyone plans at once. Option scripts, woo stars, greenlight films, and win the Golden Cob.</p>
+      </div>
+      <div class="title-grid">
+        <div class="panel">
+          <h2>Local game</h2>
+          <p class="small muted">Play solo against AI studios, or pass the device between players.</p>
+          <div id="localPlayers" class="setup-players"></div>
+          <button id="addLocalPlayer" class="small">+ Add player</button>
+          <div class="setup-row">
+            <label>AI rival studios <select id="localAi"></select></label>
+          </div>
+          <div class="setup-row">
+            <label>Length <select id="localLength"></select></label>
+          </div>
+          <div class="setup-row">
+            <label class="toggle"><input type="checkbox" id="localScandals" checked /> Random scandals</label>
+          </div>
+          <div class="setup-actions">
+            <button id="startLocal" class="primary">Start game</button>
+            <button id="continueLocal" class="hidden">Continue saved game</button>
+          </div>
+        </div>
+
+        <div class="panel" id="onlinePanel">
+          <h2>Online game</h2>
+          <div id="onlineMenu">
+            <p id="inviteNote" class="small hidden"></p>
+            <div id="createSection">
+              <div class="setup-row"><label>Your name <input type="text" id="hostName" maxlength="32" /></label></div>
+              <button id="createOnline" class="primary">Create game</button>
+            </div>
+            <hr />
+            <div class="setup-row" id="joinCodeRow"><label>Game code <input type="text" id="joinCode" maxlength="4" class="code-input" /></label></div>
+            <div class="setup-row"><label>Your name <input type="text" id="joinName" maxlength="32" /></label></div>
+            <button id="joinOnline">Join game</button>
+          </div>
+
+          <div id="lobby" class="hidden">
+            <div class="lobby-code">Code <strong id="lobbyCode"></strong> <button id="copyInvite" class="small">Copy invite link</button></div>
+            <h3>Studio bosses</h3>
+            <ul id="lobbyPlayers" class="lobby-players"></ul>
+            <div id="lobbyHostSettings">
+              <div class="setup-row"><label>AI rival studios <select id="onlineAi"></select></label></div>
+              <div class="setup-row"><label>Length <select id="onlineLength"></select></label></div>
+              <div class="setup-row"><label>Planning timer <select id="onlineTimer"></select></label></div>
+              <div class="setup-row"><label class="toggle"><input type="checkbox" id="onlineScandals" checked /> Random scandals</label></div>
+              <button id="startOnline" class="primary">Start game</button>
+            </div>
+            <p id="lobbyWaiting" class="small muted hidden">Waiting for the host to start…</p>
+            <button id="leaveLobby" class="small">Leave</button>
+          </div>
+          <p id="onlineStatus" class="small"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Game -->
+    <main id="gameScreen" class="layout hidden">
+      <section class="panel controls" id="controlsPanel"></section>
+      <section class="panel studio" id="studioPanel"></section>
+      <aside class="panel sidebar">
+        <div id="marketSection"></div>
+        <div id="infoSection"></div>
+      </aside>
+    </main>
+
+    <nav class="mobile-tabs hidden" id="mobileTabs" aria-label="Sections">
+      <button class="mobile-tab-btn" data-tab="controls">Plan</button>
+      <button class="mobile-tab-btn" data-tab="studio">Studio</button>
+      <button class="mobile-tab-btn" data-tab="market">Market</button>
+      <button class="mobile-tab-btn" data-tab="info">Info</button>
+    </nav>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <dialog id="castDialog" class="modal"></dialog>
+    <dialog id="resultsDialog" class="modal modal-wide"></dialog>
+    <dialog id="rulesDialog" class="modal modal-wide"></dialog>
+    <div id="passScreen" class="pass-screen hidden"></div>
+
+    <!-- Game rules (shared with the server engine — see api/_engine.js) -->
+    <script defer src="scripts/constants.js"></script>
+    <script defer src="scripts/core.js"></script>
+    <script defer src="scripts/data/names.js"></script>
+    <script defer src="scripts/data/locations.js"></script>
+    <script defer src="scripts/data/events.js"></script>
+    <script defer src="scripts/data/scandals.js"></script>
+    <script defer src="scripts/rules/appeal.js"></script>
+    <script defer src="scripts/rules/quality.js"></script>
+    <script defer src="scripts/rules/boxoffice.js"></script>
+    <script defer src="scripts/actions/setup.js"></script>
+    <script defer src="scripts/actions/planning.js"></script>
+    <script defer src="scripts/actions/resolve.js"></script>
+    <script defer src="scripts/actions/ai.js"></script>
+    <script defer src="scripts/actions/engine.js"></script>
+    <!-- Browser only -->
+    <script defer src="scripts/client/session.js"></script>
+    <script defer src="scripts/client/save-load.js"></script>
+    <script defer src="scripts/client/multiplayer.js"></script>
+    <script defer src="scripts/render/helpers.js"></script>
+    <script defer src="scripts/render/controls.js"></script>
+    <script defer src="scripts/render/studio.js"></script>
+    <script defer src="scripts/render/sidebar.js"></script>
+    <script defer src="scripts/render/dialogs.js"></script>
+    <script defer src="scripts/render/render.js"></script>
+    <script defer src="scripts/bootstrap.js"></script>
+  </body>
+</html>
