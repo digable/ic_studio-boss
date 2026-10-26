@@ -1,4 +1,5 @@
-// Controls panel: quarter, AP, ready-up, news, finances, sealed offers, contracts, scandal hand.
+// Plan panel: this quarter (AP, ready-up, who's ready), next steps, news, deals in progress,
+// contracted talent and scandal cards. Money lives in the always-visible money bar.
 
 function renderControls() {
   const el = document.getElementById("controlsPanel");
@@ -7,9 +8,8 @@ function renderControls() {
 
   el.innerHTML = [
     renderQuarterBox(p),
-    renderStudiosStatus(),
+    renderTodo(p),
     renderNews(),
-    renderFinances(p),
     renderMyOffers(),
     renderRoster(p),
     scandalsOn() ? renderHand(p) : ""
@@ -18,59 +18,75 @@ function renderControls() {
 
 function renderQuarterBox(p) {
   const timer = state.planningDeadline ? `<span class="timer" id="planTimer"></span>` : "";
+  const studios = state.initiative.map((pi, rank) => {
+    const o = state.players[pi];
+    return `<span class="ready-chip ${o.ready ? "ready-chip--on" : ""} ${pi === client.viewer ? "ready-chip--me" : ""}"
+      title="Initiative #${rank + 1} — ${h(o.studio)}${o.ai ? " (AI)" : ""}: ${o.ready ? "ready" : "still planning"}">
+      <span class="init-rank">${rank + 1}</span>${studioChip(pi)}${o.ready ? " ✓" : " …"}</span>`;
+  }).join("");
   return `<div class="box quarter-box">
     <div class="quarter-head">
       <h2>${h(quarterLabel(state.quarter))}</h2>
-      <span class="muted small">Quarter ${state.quarter + 1} of ${state.totalQuarters}</span>
+      <span class="muted small">${isEndless() ? `Quarter ${state.quarter + 1} · endless` : `${state.quarter + 1} / ${state.totalQuarters}`}</span>
+      ${timer}
     </div>
     <div class="small muted">${h(seasonNote(state.quarter))}</div>
     <div class="ap-row">
       <span class="stat-label">Action points</span> ${apPips(p)}
-      <span class="small muted">${p.ap} left</span>${timer}
+      <span class="small muted">${p.ap} left</span>
     </div>
     <button class="primary ready-btn ${p.ready ? "ready-btn--on" : ""}" data-act="ready">
-      ${p.ready ? "✓ Ready — click to keep planning" : "I'm done planning — Ready"}
+      ${p.ready ? "✓ Ready — click to keep planning" : "Done planning — Ready"}
     </button>
-    <div class="small muted">Free anytime: marketing, loans, pitching investors, attaching contracted talent.</div>
+    <div class="ready-row" title="Initiative order breaks ties in bidding and greenlights">${studios}</div>
+    ${isEndless() && client.viewer === state.hostIndex
+      ? `<button class="small wrap-btn" data-act="end-game" title="Ends the game for everyone and shows final standings">🎬 Call it a wrap</button>`
+      : ""}
   </div>`;
 }
 
-function renderStudiosStatus() {
-  const rows = state.initiative.map((pi, rank) => {
-    const p = state.players[pi];
-    return `<li class="${pi === client.viewer ? "me" : ""}">
-      <span class="init-rank" title="Initiative card — breaks ties in bidding and greenlights">${rank + 1}</span>
-      ${studioChip(pi)} <span class="grow">${h(p.studio)}${p.ai ? ` <span class="muted small">AI</span>` : ""}</span>
-      ${p.ready ? `<span class="pill pill--good">Ready</span>` : `<span class="pill">Planning…</span>`}
-    </li>`;
-  }).join("");
-  return `<div class="box"><h3>Studios <span class="muted small">by initiative</span></h3><ul class="studio-status">${rows}</ul></div>`;
+// What to do next, in plain words
+function renderTodo(p) {
+  if (p.ready) return "";
+  const items = [];
+  const active = p.projects.filter(isActive);
+  if (!active.length) {
+    items.push(`No movies yet. <button class="link" data-act="goto-scripts">Find a script</button> or <button class="link" data-act="new-package">start with talent or a location</button>.`);
+  }
+  for (const f of p.projects.filter((x) => x.status === STATUS.DEV)) {
+    if (f.pendingGreenlight) continue;
+    const need = [];
+    if (!hasScript(f) && !pendingScriptBid(f)) need.push(`<button class="link" data-act="goto-scripts" data-project="${f.id}">script</button>`);
+    if (!f.director && !pendingOfferFor(f, "DIRECTOR")) need.push(`<button class="link" data-act="cast" data-project="${f.id}" data-slot="DIRECTOR">director</button>`);
+    if (!f.cast[0] && !pendingOfferFor(f, 0)) need.push(`<button class="link" data-act="cast" data-project="${f.id}" data-slot="0">lead</button>`);
+    if (!f.location) need.push("location");
+    if (need.length) items.push(`<strong>${h(f.title)}</strong> needs ${need.join(", ")}`);
+    else items.push(`<strong>${h(f.title)}</strong> is ready to greenlight`);
+  }
+  p.projects.filter((f) => f.status === STATUS.CANNED).forEach((f) => items.push(`<strong>${h(f.title)}</strong> is in the can — release it`));
+  const idle = p.roster.length;
+  if (idle) items.push(`${idle} ${idle > 1 ? "people" : "person"} under contract with no project`);
+  if (p.ap <= 0) items.push("Out of action points — free actions still work, then hit Ready");
+  if (!items.length) items.push("Nothing urgent. Market your films, line up new scripts, or hit Ready.");
+  return `<div class="box todo-box"><h3>Next up</h3><ul class="todo">${items.map((i) => `<li>${i}</li>`).join("")}</ul></div>`;
 }
 
 function renderNews() {
   const e = state.event;
-  const s = state.scandal;
+  const sc = state.scandal;
+  const history = activeHistory().filter((x) => x.kind !== "rates");
+  const showRandom = e && !(isHistorical() && e.id === "NORMAL" && history.length);
+  const since = (x) => x.from === calendarOf().key ? "New this quarter" : `Since ${x.from.replace("-", " ")}`;
   return `<div class="box news-box">
-    <h3>Industry news</h3>
-    ${e ? `<div class="news-card"><strong>${h(e.name)}</strong><div class="small">${h(e.text)}</div></div>` : ""}
-    ${s ? `<div class="news-card news-card--scandal"><strong>Scandal: ${h(s.name)}</strong><div class="small">${h(s.text)}</div></div>` : ""}
-  </div>`;
-}
-
-function renderFinances(p) {
-  return `<div class="box">
-    <h3>${studioName(p.index)}</h3>
-    <div class="stat-grid">
-      ${statLine("Cash", fmtMoney(p.cash))}
-      ${statLine("Debt", fmtMoney(p.debt))}
-      ${statLine("Prestige", `${p.prestige} 🌽`)}
-      ${statLine("Value", fmtMoney(studioValue(p)))}
-    </div>
-    <div class="btn-row">
-      <button class="small" data-act="loan" ${p.debt + LOAN_SIZE > MAX_DEBT ? "disabled" : ""}>Borrow ${fmtMoney(LOAN_SIZE)}</button>
-      <button class="small" data-act="repay" ${p.debt <= 0 ? "disabled" : ""}>Repay ${fmtMoney(Math.min(REPAY_SIZE, p.debt || REPAY_SIZE))}</button>
-    </div>
-    <div class="small muted">Overhead ${fmtMoney(OVERHEAD)}/quarter · loans cost ${LOAN_INTEREST * 100}%/quarter</div>
+    <h3>${isHistorical() ? `The world in ${calendarOf().year}` : "Industry news"}</h3>
+    ${history.map((x) => `<div class="news-card news-card--history ${x.from === calendarOf().key ? "news-card--new" : ""}">
+        <strong>${h(x.name)}</strong> <span class="small muted">${since(x)}</span>
+        <div class="small">${h(x.text)}</div>
+        ${describeMods(x.mods) ? `<div class="small effect">Effect: ${h(describeMods(x.mods))}</div>` : ""}
+      </div>`).join("")}
+    ${showRandom ? `<div class="news-card"><strong>${h(e.name)}</strong><div class="small">${h(e.text)}</div></div>` : ""}
+    ${sc ? `<div class="news-card news-card--scandal"><strong>Scandal: ${h(sc.name)}</strong><div class="small">${h(sc.text)}</div></div>` : ""}
+    <div class="small muted">Loans cost about ${loanRatePerYear().toFixed(1)}% a year${isHistorical() ? ` (${h(activeHistory().find((x) => x.kind === "rates")?.name || "normal rates")})` : ""}.</div>
   </div>`;
 }
 
@@ -83,7 +99,7 @@ function renderMyOffers() {
       : `${h(o.name)} — ${fmtMoney(o.fee)} for "${h(o.title)}"`;
     return `<li><span class="grow">${what}</span><button class="small" data-act="withdraw" data-offer="${o.id}" title="Withdraw and refund (AP returned)">✕</button></li>`;
   }).join("");
-  return `<div class="box"><h3>Sealed offers <span class="muted small">settled at quarter end</span></h3><ul class="offer-list">${rows}</ul></div>`;
+  return `<div class="box"><h3>Deals in progress <span class="muted small">settle at quarter end</span></h3><ul class="offer-list">${rows}</ul></div>`;
 }
 
 function renderRoster(p) {

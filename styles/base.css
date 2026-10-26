@@ -49,6 +49,7 @@
   --genre-SCIFI:   #1f7a8c;
   --genre-FAMILY:  #3a9a4a;
   --genre-ROMANCE: #d4587a;
+  --genre-NONE:    #9a8060;
 }
 
 * { box-sizing: border-box; }

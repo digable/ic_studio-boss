@@ -6,6 +6,11 @@ function initiativeRank(pi) {
   return r < 0 ? 99 : r;
 }
 
+// Reason labels read mid-sentence: lowercase generic ones ("Generous offer"), keep names ("Leo Whitlock: friends")
+function reasonText(r) {
+  return /^[A-Z][a-z]+ [A-Z]/.test(r.label) ? r.label : r.label.charAt(0).toLowerCase() + r.label.slice(1);
+}
+
 function note(report, pi, text, ok = true) { report.deals.push({ pi, text, ok }); }
 
 function resolveScriptBids(report) {
@@ -21,14 +26,23 @@ function resolveScriptBids(report) {
       initiativeRank(a.pi) - initiativeRank(b.pi));
     const [win, ...losers] = list;
     const winner = state.players[win.pi];
-    const f = projectFromScript(s);
-    f.cost = win.amount;
-    winner.projects.push(f);
+    const pkg = win.projectId && winner.projects.find((x) => x.id === win.projectId && x.status === STATUS.DEV && !hasScript(x));
     state.market.scripts.splice(idx, 1);
-    note(report, win.pi, `You won the script "${s.title}" for ${fmtMoney(win.amount)}.`);
+    if (pkg) {
+      const pkgName = pkg.title;
+      const extra = attachScript(pkg, s);
+      pkg.cost = roundMoney(pkg.cost + win.amount);
+      extra.forEach((id) => { if (!winner.roster.includes(id)) winner.roster.push(id); });
+      note(report, win.pi, `You won "${s.title}" for ${fmtMoney(win.amount)} — ${pkgName} is now "${s.title}".${extra.length ? ` ${extra.map((id) => talentById(id).name).join(", ")} ${extra.length > 1 ? "have" : "has"} no role and stay${extra.length > 1 ? "" : "s"} under contract.` : ""}`);
+    } else {
+      const f = projectFromScript(s);
+      f.cost = win.amount;
+      winner.projects.push(f);
+      note(report, win.pi, `You won the script "${s.title}" for ${fmtMoney(win.amount)}.`);
+    }
     logLine(`${winner.studio} buys the script "${s.title}".`, win.pi);
     for (const o of losers) {
-      state.players[o.pi].cash = round1(state.players[o.pi].cash + o.amount);
+      state.players[o.pi].cash = roundMoney(state.players[o.pi].cash + o.amount);
       note(report, o.pi, `${winner.studio} outbid you for "${s.title}". Your ${fmtMoney(o.amount)} is refunded.`, false);
     }
   }
@@ -40,7 +54,7 @@ function resolveTalentOffers(report) {
   offers.forEach((o) => { if (!byTalent.has(o.talentId)) byTalent.set(o.talentId, []); byTalent.get(o.talentId).push(o); });
 
   const refund = (o, text) => {
-    state.players[o.pi].cash = round1(state.players[o.pi].cash + o.fee);
+    state.players[o.pi].cash = roundMoney(state.players[o.pi].cash + o.fee);
     note(report, o.pi, text, false);
   };
 
@@ -50,7 +64,11 @@ function resolveTalentOffers(report) {
     for (const o of list) {
       const found = findProject(o.projectId);
       const f = found?.project;
-      if (!f || f.status !== STATUS.DEV || slotFilled(f, o.slot) || attachedTalentIds(f).includes(tid)) {
+      if (f && o.slot !== "DIRECTOR" && (o.slot >= f.roles.length || slotFilled(f, o.slot))) {
+        const open = openSlots(f).find((x) => x !== "DIRECTOR");
+        if (open !== undefined) o.slot = open;
+      }
+      if (!f || f.status !== STATUS.DEV || o.slot >= f.roles.length || slotFilled(f, o.slot) || attachedTalentIds(f).includes(tid)) {
         refund(o, `Your offer to ${t.name} lapsed — the role on "${o.title}" was no longer open.`);
         continue;
       }
@@ -64,29 +82,29 @@ function resolveTalentOffers(report) {
     if (signs) {
       const f = best.f;
       attach(f, t, best.o.slot);
-      f.cost = round1(f.cost + best.o.fee);
-      const why = best.a.reasons.filter((r) => r.value > 0).slice(0, 2).map((r) => r.label.toLowerCase()).join(", ");
+      f.cost = roundMoney(f.cost + best.o.fee);
+      const why = best.a.reasons.filter((r) => r.value > 0).slice(0, 2).map((r) => reasonText(r)).join(", ");
       note(report, best.o.pi, `${t.name} signs on to "${f.title}" as ${slotLabel(f, best.o.slot)}${why ? ` (${why})` : ""}.`);
       logLine(`${t.name} signs with ${state.players[best.o.pi].studio} for "${f.title}".`, best.o.pi);
     } else {
       const worst = best.a.reasons.filter((r) => r.value < 0)[0];
-      refund(best.o, `${t.name} turned down "${best.f.title}"${worst ? ` — ${worst.label.toLowerCase()}` : ""}. Refunded.`);
+      refund(best.o, `${t.name} turned down "${best.f.title}"${worst ? ` — ${reasonText(worst)}` : ""}. Refunded.`);
     }
     for (const s of scored.slice(1)) {
       if (signs) {
         const winStudio = state.players[best.o.pi].studio;
         const top = best.a.reasons.find((r) => r.value > 0);
-        refund(s.o, `${t.name} chose "${best.f.title}" (${winStudio}) over "${s.f.title}"${top ? ` — ${top.label.toLowerCase()}` : ""}. Refunded.`);
+        refund(s.o, `${t.name} chose "${best.f.title}" (${winStudio}) over "${s.f.title}"${top ? ` — ${reasonText(top)}` : ""}. Refunded.`);
       } else {
         const worst = s.a.reasons.filter((r) => r.value < 0)[0];
-        refund(s.o, `${t.name} turned down "${s.f.title}"${worst ? ` — ${worst.label.toLowerCase()}` : ""}. Refunded.`);
+        refund(s.o, `${t.name} turned down "${s.f.title}"${worst ? ` — ${reasonText(worst)}` : ""}. Refunded.`);
       }
     }
   }
 }
 
 const PRODUCTION_EVENTS = [
-  { weight: 3, run: (f, p) => { const extra = round1(BUDGETS[f.budget].cost * 0.15); p.cash = round1(p.cash - extra); f.cost = round1(f.cost + extra); return `goes over budget (${fmtMoney(extra)})`; } },
+  { weight: 3, run: (f, p) => { const extra = roundMoney(BUDGETS[f.budget].cost * 0.15); p.cash = roundMoney(p.cash - extra); f.cost = roundMoney(f.cost + extra); return `goes over budget (${fmtMoney(extra)})`; } },
   { weight: 2, run: (f) => { f.qualityMod += 6; return "has on-set magic (+6 quality)"; } },
   { weight: 2, run: (f) => { f.hype = Math.min(100, f.hype + 10); return "has set photos go viral (+10 hype)"; } },
   { weight: 2, run: (f) => { f.qualityMod -= 6; return "suffers creative differences (-6 quality)"; } },
@@ -95,10 +113,14 @@ const PRODUCTION_EVENTS = [
 ];
 
 function tickProduction(report) {
+  const halted = productionHalted();
+  if (halted && allProjects().some(({ project: f }) => f.status === STATUS.FILMING)) {
+    logLine(`Cameras stop: ${halted}. Shoots in progress are on hold.`, null, "warn");
+  }
   state.players.forEach((p, pi) => {
     for (const f of p.projects) {
       if (f.status === STATUS.CANNED) f.hype = Math.max(0, f.hype - 4);
-      if (f.status !== STATUS.FILMING) continue;
+      if (f.status !== STATUS.FILMING || halted) continue;
       if (chance(0.15)) {
         const what = weightedPick(PRODUCTION_EVENTS, (e) => e.weight).run(f, p);
         if (what) logLine(`"${f.title}" ${what}.`, pi);
@@ -123,13 +145,14 @@ function resolveGreenlights(report) {
     f.pendingGreenlight = null;
     const conflicts = f.status === STATUS.DEV ? greenlightConflicts(f, false) : ["it's no longer in development"];
     if (conflicts.length) {
-      p.cash = round1(p.cash + gl.escrow);
+      p.cash = roundMoney(p.cash + gl.escrow);
       note(report, pi, `"${f.title}" couldn't start filming: ${conflicts[0]}. Budget refunded.`, false);
       continue;
     }
     f.status = STATUS.FILMING;
     f.budget = gl.budget;
-    f.cost = round1(f.cost + gl.escrow);
+    f.cost = roundMoney(f.cost + gl.escrow);
+    if (gl.cofinance) f.investorShare = Math.min(MAX_INVESTOR_SHARE, f.investorShare + COFINANCE_SHARE);
     f.quartersLeft = shootLength(f, gl.budget);
     f.shootTotal = f.quartersLeft;
     f.shootPlanned = f.quartersLeft;
@@ -142,7 +165,7 @@ function resolveGreenlights(report) {
 function openFilm(p, f, mods) {
   f.critic = rollCritic(f, mods.criticBonus || 0);
   f.hype = Math.min(100, f.hype + p.prestige * 2);
-  f.luck = round1(randRange(0.7, 1.3) * 100) / 100;
+  f.luck = roundMoney(randRange(0.7, 1.3) * 100) / 100;
   f.status = STATUS.THEATERS;
   f.run = 0;
   f.releasedQuarter = state.quarter;
@@ -168,12 +191,12 @@ function runBoxOffice(report, mods) {
     const f = e.project;
     const p = state.players[e.pi];
     const gross = grosses[i];
-    const take = round1(gross * (1 - f.investorShare));
+    const take = roundMoney(gross * STUDIO_SHARE * (1 - f.investorShare));
     f.grosses.push(gross);
-    f.totalGross = round1(f.totalGross + gross);
-    f.studioTake = round1(f.studioTake + take);
-    p.cash = round1(p.cash + take);
-    p.lifetimeGross = round1(p.lifetimeGross + take);
+    f.totalGross = roundMoney(f.totalGross + gross);
+    f.studioTake = roundMoney(f.studioTake + take);
+    p.cash = roundMoney(p.cash + take);
+    p.lifetimeGross = roundMoney(p.lifetimeGross + take);
     report.films.push({ pi: e.pi, id: f.id, title: f.title, genre: f.genre, week: f.run, gross, critic: f.critic, total: f.totalGross });
     if (f.run === 0) logLine(`BOX OFFICE: "${f.title}" opens to ${fmtMoney(gross)} — ${criticQuip(f.critic)} (${f.critic}).`, e.pi);
     f.run++;
@@ -187,16 +210,29 @@ function runBoxOffice(report, mods) {
 
 function upkeep(report, mods) {
   state.players.forEach((p, pi) => {
-    const interest = round1(p.debt * LOAN_INTEREST * (mods.interestMult || 1));
-    p.cash = round1(p.cash - OVERHEAD - interest);
+    const interest = roundMoney(p.debt * LOAN_INTEREST * (mods.interestMult ?? 1));
+    // Home video / TV / streaming money for the back catalog (real-history eras)
+    const libraryFilms = p.projects.filter((f) => f.status === STATUS.LIBRARY).length;
+    const library = roundMoney(libraryFilms * (mods.libraryIncome || 0));
+    p.cash = roundMoney(p.cash - OVERHEAD - interest + library);
+    p.lifetimeGross = roundMoney(p.lifetimeGross + library);
     let loans = 0;
     while (p.cash < 0 && p.debt + LOAN_SIZE <= MAX_DEBT) {
-      p.cash = round1(p.cash + LOAN_SIZE);
-      p.debt = round1(p.debt + LOAN_SIZE);
+      p.cash = roundMoney(p.cash + LOAN_SIZE);
+      p.debt = roundMoney(p.debt + LOAN_SIZE);
       loans++;
     }
     if (loans) logLine(`${p.studio} is short on cash. The bank lends ${fmtMoney(loans * LOAN_SIZE)}.`, pi, "warn");
-    report.finances.push({ pi, overhead: OVERHEAD, interest, loans: loans * LOAN_SIZE });
+    // Still broke with the credit line maxed: restructure so the studio can keep making movies
+    let bankrupt = false;
+    if (p.cash < 0) {
+      bankrupt = true;
+      p.debt = roundMoney(p.debt / 2);
+      p.cash = BANKRUPTCY_CASH;
+      p.prestige = Math.max(0, p.prestige - BANKRUPTCY_PRESTIGE);
+      logLine(`${p.studio} files for bankruptcy protection: debt halved to ${fmtMoney(p.debt)}, -${BANKRUPTCY_PRESTIGE} prestige.`, pi, "warn");
+    }
+    report.finances.push({ pi, overhead: OVERHEAD, interest, library, loans: loans * LOAN_SIZE, bankrupt });
   });
 }
 
@@ -224,7 +260,7 @@ function holdAwards(q) {
   return results;
 }
 
-function endGame() {
+function endGame(reason = null) {
   state.phase = "GAME_OVER";
   state.planningDeadline = null;
   state.final = state.players
@@ -234,10 +270,11 @@ function endGame() {
       cash: p.cash,
       debt: p.debt,
       prestige: p.prestige,
-      library: round1(p.lifetimeGross * LIBRARY_RATE)
+      library: roundMoney(p.lifetimeGross * LIBRARY_RATE)
     }))
     .sort((a, b) => b.value - a.value);
   const w = state.players[state.final[0].pi];
+  if (reason) logLine(reason, null, "quarter");
   logLine(`THAT'S A WRAP! ${w.studio} wins with a studio value of ${fmtMoney(state.final[0].value)}.`, state.final[0].pi, "award");
 }
 
@@ -246,6 +283,7 @@ function beginQuarter() {
   state.offers = [];
   state.event = drawEvent();
   state.initiative = shuffle([...Array(n).keys()]);
+  announceHistory(state.quarter === 0);
   startEvent(state.event);
   refreshScripts();
   if (scandalsOn() && state.quarter > 0 && state.quarter % 4 === 0) state.players.forEach((_, pi) => drawPlayableCard(pi));
@@ -273,7 +311,7 @@ function resolveQuarter() {
 
   state.lastReport = report;
   state.version++;
-  if (q >= state.totalQuarters - 1) { endGame(); return; }
+  if (isLastQuarter(q)) { endGame(); return; }
   state.quarter++;
   beginQuarter();
 }

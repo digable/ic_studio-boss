@@ -88,7 +88,7 @@ const SCANDAL_CARDS = {
     name: "Leaked Script", kind: "RANDOM", target: "NONE",
     text: "A script leaks online. -10 hype and the ending has to be reworked (-3 quality).",
     apply: ({ shield }) => {
-      const pool = allProjects().filter(({ project: f }) => [STATUS.DEV, STATUS.FILMING, STATUS.CANNED].includes(f.status));
+      const pool = allProjects().filter(({ project: f }) => hasScript(f) && [STATUS.DEV, STATUS.FILMING, STATUS.CANNED].includes(f.status));
       if (!pool.length) return null;
       const { project: f, pi } = pick(pool);
       if (shield(pi)) return `A leak of "${f.title}" is taken down before anyone notices.`;

@@ -7,6 +7,7 @@ const { loadEngine } = require("../api/_engine");
 
 const GAMES = Number(process.argv[2]) || 200;
 const g = loadEngine();
+const K = (name) => require("vm").runInContext(name, g); // read engine constants
 const failures = [];
 const check = (cond, msg) => { if (!cond && failures.length < 25) failures.push(msg); };
 
@@ -116,8 +117,113 @@ for (let i = 0; i < GAMES; i++) {
   const loser = 1 - winner;
   const lostNote = st.lastReport.deals.find((d) => d.pi === loser && !d.ok);
   check(lostNote && /chose|turned down/.test(lostNote.text), "contest: loser got no explanation");
-  check(Math.abs(st.players[loser].cash - (cashBefore[loser] - 2)) < 0.01, `contest: loser not refunded (cash ${st.players[loser].cash})`);
+  check(Math.abs(st.players[loser].cash - (cashBefore[loser] - K("OVERHEAD"))) < 0.01, `contest: loser not refunded (cash ${st.players[loser].cash})`);
   console.log(`Contest scenario: ${st.players[winner].name} signed ${star.name}; loser told: "${lostNote?.text}"`);
+}
+
+// --- Scenario: start from talent and a location, add the script later ------------------
+{
+  g.newGameState({ players: [{ name: "A", sessionId: "a" }, { name: "B", ai: true }], length: "SHORT", scandals: false });
+  g.beginQuarter();
+  const st = g.state;
+  const p = st.players[0];
+  p.cash = 300;
+  st.players[1].ready = true;
+  const r1 = g.applyAction(0, { type: "NEW_PACKAGE" });
+  const pkg = p.projects.find((f) => !g.hasScript(f));
+  check(r1.ok && pkg, `package: could not start one (${r1.msg})`);
+  const devBefore = p.projects.filter((f) => f.status === "DEV").length; // starting hand may include scripts
+  const star = Object.values(st.talent).filter((t) => t.role === "STAR" && !t.rivals.length).sort((a, b) => a.fame - b.fame)[0];
+  const offer = g.applyAction(0, { type: "OFFER", talentId: star.id, projectId: pkg.id, slot: 0, fee: g.askingFeeFor(star, pkg, 0) + 40 });
+  check(offer.ok, `package: offer failed (${offer.msg})`);
+  check(g.applyAction(0, { type: "SCOUT", projectId: pkg.id, locationId: "L_PEDMALL" }).ok, "package: scout failed");
+  const gl = g.applyAction(0, { type: "GREENLIGHT", projectId: pkg.id, budget: "INDIE" });
+  check(!gl.ok, "package: greenlit without a script");
+  p.ap += 1; // allow the script bid this quarter
+  if (!st.market.scripts.length) st.market.scripts.push(g.makeScript()); // opening news may be a writers' strike
+  const script = st.market.scripts[0];
+  const bid = g.applyAction(0, { type: "BID_SCRIPT", scriptId: script.id, amount: script.price + 60, projectId: pkg.id });
+  check(bid.ok, `package: script bid failed (${bid.msg})`);
+  g.applyAction(0, { type: "READY" });
+  check(st.quarter === 1, "package: quarter did not resolve");
+  check(g.hasScript(pkg) && pkg.title === script.title, "package: script was not attached to the package");
+  check(pkg.location === "L_PEDMALL", "package: location lost when the script arrived");
+  check(pkg.cast.includes(star.id), `package: star not in the cast after script arrived (${st.lastReport.deals.map((d) => d.text).join(" / ")})`);
+  check(p.projects.filter((f) => f.status === "DEV").length === devBefore, "package: script bid created a second project");
+
+  const shelve = g.applyAction(0, { type: "SHELVE", projectId: pkg.id });
+  check(shelve.ok && !p.projects.includes(pkg), "package: shelve failed");
+  check(p.roster.includes(star.id), "package: shelved star not kept under contract");
+  console.log(`Package scenario: talent + location first, then "${script.title}" — ${shelve.msg}`);
+}
+
+// --- Scenario: endless mode keeps going until the host calls it a wrap ----------------
+{
+  g.newGameState({ players: [1, 2, 3, 4].map((k) => ({ name: `AI ${k}`, ai: true })), length: "ENDLESS", scandals: true });
+  g.beginQuarter();
+  const st = () => g.state;
+  for (let q = 0; q < 60; q++) {
+    check(st().phase === "PLANNING", `endless: game ended on its own at quarter ${st().quarter}`);
+    checkState(st(), `endless ${g.quarterLabel(st().quarter)}`);
+    g.resolveQuarter();
+  }
+  const bytes = JSON.stringify(st()).length;
+  check(bytes < 1024 * 1024, `endless: state grew to ${(bytes / 1024).toFixed(0)} KB after 60 quarters`);
+  const films = st().players.reduce((n, p) => n + p.projects.filter((f) => f.status === "LIBRARY").length, 0);
+  check(films > 20, `endless: only ${films} films finished in 60 quarters`);
+  const notHost = g.performAction(1, { type: "END_GAME" });
+  check(!notHost.ok, "endless: a non-host ended the game");
+  const end = g.performAction(st().hostIndex, { type: "END_GAME" });
+  check(end.ok && st().phase === "GAME_OVER" && st().final?.length === 4, `endless: host could not call it a wrap (${end.msg})`);
+  console.log(`Endless scenario: 60 quarters, ${films} films released, state ${(bytes / 1024).toFixed(0)} KB, then "${end.msg}"`);
+}
+
+// --- Scenario: real-history games -------------------------------------------------------------
+{
+  const run = (startYear, quarters, length = "ENDLESS") => {
+    g.newGameState({ players: [1, 2, 3].map((k) => ({ name: `AI ${k}`, ai: true })), length, scandals: false, startYear });
+    g.beginQuarter();
+    const seen = [];
+    for (let i = 0; i < quarters && g.state.phase === "PLANNING"; i++) {
+      checkState(g.state, `history ${startYear} ${g.quarterLabel(g.state.quarter)}`);
+      seen.push({ key: g.calendarOf().key, mods: g.eventMods(), level: g.priceLevel(), filming: g.allProjects().filter(({ project: f }) => f.status === "FILMING").map(({ project: f }) => ({ id: f.id, left: f.quartersLeft })) });
+      g.resolveQuarter();
+      const after = g.allProjects().filter(({ project: f }) => f.status === "FILMING");
+      seen[seen.length - 1].after = after.map(({ project: f }) => ({ id: f.id, left: f.quartersLeft }));
+    }
+    return seen;
+  };
+
+  // Inflation: money is shown in that quarter's dollars, exactly per the CPI table
+  const s1950 = run(1950, 8);
+  const cpi = (k) => require("vm").runInContext(`CPI_QUARTERLY["${k}"]`, g);
+  const lastKey = require("vm").runInContext("CPI_LAST", g);
+  check(s1950[0].key === "1950-Q1", `history: first quarter is ${s1950[0].key}, expected 1950-Q1`);
+  check(Math.abs(s1950[0].level - cpi("1950-Q1") / cpi(lastKey)) < 1e-12, "history: 1950 price level doesn't match CPI");
+  g.newGameState({ players: [{ name: "A", ai: true }, { name: "B", ai: true }], length: "SHORT", startYear: 1980 });
+  const shown = g.fmtMoney(100); // $100M today in 1980-Q1 dollars
+  const expected = 100 * cpi("1980-Q1") / cpi(lastKey);
+  check(shown === `$${expected.toFixed(1)}M`, `history: $100M today showed as ${shown} in 1980, expected about $${expected.toFixed(1)}M`);
+  check(g.fmtMoney(100, { today: true }) === "$100M", "history: today's-dollars formatting broken");
+
+  // COVID: box office collapses in 2020-Q2 and shoots in progress don't advance
+  const covid = run(2019, 12);
+  const q2020 = covid.find((x) => x.key === "2020-Q2");
+  check(q2020 && q2020.mods.boxOfficeMult < 0.05 && q2020.mods.filmingPause, "history: COVID shutdown not in effect in 2020-Q2");
+  check(q2020 && q2020.filming.every((b) => { const a = q2020.after.find((x) => x.id === b.id); return !a || a.left === b.left; }), "history: filming advanced during the 2020 shutdown");
+  const y2019 = covid.find((x) => x.key === "2019-Q3");
+  check(y2019 && !y2019.mods.filmingPause && (y2019.mods.boxOfficeMult ?? 1) === 1, "history: 2019 should be a normal year");
+
+  // 2023 strikes: writers' strike blocks rewrites/new scripts; actors' strike halts shoots
+  const strikes = run(2023, 4);
+  const q3 = strikes.find((x) => x.key === "2023-Q3");
+  check(q3 && q3.mods.strike && q3.mods.actorsStrike, "history: 2023-Q3 should have both the WGA and SAG-AFTRA strikes");
+
+  // Past the last CPI quarter, inflation is projected and the game keeps going on random news
+  const future = run(2025, 8);
+  check(future.every((x, i) => i === 0 || x.level >= future[i - 1].level * 0.99), "history: projected price level should keep rising");
+  check(g.state.phase === "PLANNING", "history: endless game past the data should keep going");
+  console.log(`History scenarios: 1950 dollars ×${s1950[0].level.toFixed(4)} of today; $100M today = ${shown} in 1980; COVID box office ×${q2020?.mods.boxOfficeMult}`);
 }
 
 const avg = (a) => a.reduce((n, v) => n + v, 0) / (a.length || 1);

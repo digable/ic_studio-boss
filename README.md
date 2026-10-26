@@ -23,8 +23,13 @@ Open `index.html` locally for solo or same-device play — no build step require
 - **Industry news** — genre crazes, writers' strikes, Iowa film tax credits, recessions, streaming deals…
 - **Scandal cards (toggle)** — random scandals hit stars and productions; playable cards (Leak to the Tabloids, Bad Test Screening, Poach, Publicity Stunt, Damage Control)
 - **Golden Cob Awards** — Best Picture, Golden Popcorn and Best Indie every Q4, awarding prestige
+- **Endless mode** — no last quarter; the host ends it whenever they like
+- **Real history mode** — start in any year from 1930; every quarter is a real calendar quarter with real world and industry events (wars, recessions, strikes, *Jaws*, *Star Wars*, VHS, DVD, streaming, COVID-19…) changing what audiences want and what films can be made
+- **Inflation-accurate money** — in real history, all money is shown in that year's dollars using the official BLS Consumer Price Index (CPI-U); loan rates follow the era's approximate prime rate
+- **Realistic scale** — budgets, star fees and worldwide box office in real-world ranges (Indie ~$8M, Blockbuster ~$160M in today's dollars; stars from a few hundred thousand to $20M+)
 - **AI rival studios** — blockbuster, indie and balanced personalities; they also take over for players who leave
 - **Online multiplayer** — 4-character room codes, invite links, server-authoritative state, 1.5 s polling, hidden offers
+- **Money always in view** — a bank bar (cash, money held in offers, debt, upkeep, value) stays on screen; running short opens a Financing panel with loans, investor pitches and co-financing, then retries what you were doing
 - **Hot-seat** — pass-the-device screen between players on one device
 - **Mobile UI** — bottom tab bar (Plan / Studio / Market / Info)
 
@@ -47,7 +52,7 @@ Open `index.html` locally for solo or same-device play — no build step require
 | Bid on a script | Marketing |
 | Make a talent offer | Loans / repayments |
 | Scout a location | Pitch investors (cash now for 15% of the box office) |
-| Greenlight | Attach contracted talent |
+| Greenlight (optionally co-financed: a partner pays 50% of the budget for 25% of the box office) | Attach contracted talent |
 | Release a film | Withdraw an offer (AP refunded) |
 | Rewrite | |
 | Play a scandal card | |
@@ -60,7 +65,19 @@ Highest **studio value** at the end of the last quarter:
 
 `cash − debt + 10 × prestige + 10% of lifetime box office`
 
-Game length: Short (8 quarters), Standard (12), Long (16).
+Game length: Short (8 quarters), Standard (12), Long (16), or **Endless** — keep making movies until the host clicks **Call it a wrap**.
+
+Era: **Fictional, present day**, or **Real history** starting in any year from 1930 to 2026.
+
+Studios that are still broke after maxing out their loans ($100M) go through bankruptcy restructuring: debt halved, cash reset to $5M, −3 prestige.
+
+---
+
+## Data sources
+
+Inflation uses the official **BLS CPI-U** (series CUUR0000SA0). Historical events use real dates. Many other numbers — effect sizes, fees, budgets, the box-office formula — are **game-design estimates**, and all people, studios and films are fictional.
+
+**[DATA_SOURCES.md](DATA_SOURCES.md)** lists exactly what is official data, what is approximated from real figures, and what is made up.
 
 ---
 
@@ -105,13 +122,18 @@ ic_studio-boss/
 │   ├── constants.js            # All tuning numbers: genres, budgets, roles, AP costs, awards…
 │   ├── core.js                 # `state`, RNG and lookup helpers
 │   ├── data/                   # names, locations, industry events, scandal cards
+│   │   └── real/               # cpi.js (generated, BLS CPI-U) and history.js (real events)
 │   ├── rules/                  # appeal (talent decisions), quality, box office
 │   ├── actions/                # setup, planning actions, resolution, AI, engine API
 │   ├── client/                 # browser session, local save, online multiplayer
 │   ├── render/                 # panels, dialogs, render orchestrator
 │   └── bootstrap.js            # event wiring and boot
 ├── styles/                     # base tokens, layout, components
-└── tests/sim.js                # plays hundreds of AI games and checks invariants
+├── tests/sim.js                # plays hundreds of AI games and checks invariants
+├── tools/
+│   ├── build-cpi.js            # builds scripts/data/real/cpi.js from the BLS table (and verifies it)
+│   └── data/cpi-u-nsa.tsv      # BLS CPI-U monthly data, as supplied
+└── DATA_SOURCES.md             # what's real data, what's approximated, what's invented
 ```
 
 ---

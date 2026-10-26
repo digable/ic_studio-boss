@@ -1,6 +1,8 @@
 // Industry news: one is revealed at the start of every quarter.
 // The event object stored in state is { id, name, text, genre? }; mods/onStart are looked up here.
 
+const STREAMING_PER_FILM = 3;
+
 const EVENT_DEFS = {
   NORMAL: {
     weight: 4,
@@ -54,11 +56,11 @@ const EVENT_DEFS = {
   },
   STREAMING: {
     weight: 2,
-    make: () => ({ name: "Streaming bidding war", text: "Streamers license back catalogs: every studio earns $2M per film in its library." }),
+    make: () => ({ name: "Streaming bidding war", text: `Streamers license back catalogs: every studio earns ${fmtMoney(STREAMING_PER_FILM)} per film in its library.` }),
     onStart: () => {
       state.players.forEach((p, pi) => {
         const n = p.projects.filter((f) => f.status === STATUS.LIBRARY).length;
-        if (n > 0) { p.cash = round1(p.cash + 2 * n); logLine(`${p.studio} licenses ${n} library film${n > 1 ? "s" : ""} for ${fmtMoney(2 * n)}.`, pi); }
+        if (n > 0) { p.cash = roundMoney(p.cash + STREAMING_PER_FILM * n); logLine(`${p.studio} licenses ${n} library film${n > 1 ? "s" : ""} for ${fmtMoney(STREAMING_PER_FILM * n)}.`, pi); }
       });
     }
   },
@@ -77,15 +79,61 @@ const EVENT_DEFS = {
   }
 };
 
+// Real-history games only draw news that fits any era; real events come from HISTORY instead
+const TIMELESS_EVENTS = ["NORMAL", "FESTIVAL", "NEW_FACES"];
+
 function drawEvent() {
-  const ids = Object.keys(EVENT_DEFS);
+  const ids = historyCovers() ? TIMELESS_EVENTS : Object.keys(EVENT_DEFS);
   const id = weightedPick(ids, (k) => EVENT_DEFS[k].weight);
   return { id, ...EVENT_DEFS[id].make() };
 }
 
+// --- real history -------------------------------------------------------------------------------
+
+function historyCovers(q = state.quarter) {
+  return isHistorical() && calendarOf(q).key <= HISTORY_END;
+}
+
+function activeHistory(q = state.quarter) {
+  if (!isHistorical()) return [];
+  const key = calendarOf(q).key;
+  return HISTORY.filter((h) => h.from <= key && (h.to === null || key <= h.to));
+}
+
+// Combine effect sets: multipliers multiply, bonuses add, flags OR
+const MULT_MODS = ["boxOfficeMult", "interestMult", "budgetMult", "pitchMult", "indieMult", "summerMult", "marketingMult"];
+const ADD_MODS = ["criticBonus", "libraryIncome"];
+function mergeMods(list) {
+  const out = { genreMult: {} };
+  for (const m of list) {
+    if (!m) continue;
+    for (const [k, v] of Object.entries(m)) {
+      if (k === "genreMult") Object.entries(v).forEach(([g, x]) => { out.genreMult[g] = (out.genreMult[g] ?? 1) * x; });
+      else if (k === "budgetDiscount") out.budgetMult = (out.budgetMult ?? 1) * (1 - v);
+      else if (MULT_MODS.includes(k)) out[k] = (out[k] ?? 1) * v;
+      else if (ADD_MODS.includes(k)) out[k] = (out[k] ?? 0) + v;
+      else out[k] = out[k] || v;
+    }
+  }
+  return out;
+}
+
+// Everything in effect this quarter: the news card plus any real history
 function eventMods(e = state.event) {
   const def = e && EVENT_DEFS[e.id];
-  return (def && def.mods ? def.mods(e) : null) || {};
+  const news = (def && def.mods ? def.mods(e) : null) || {};
+  return mergeMods([news, ...activeHistory().map((h) => h.mods)]);
+}
+
+// Log real events as they begin (everything already in effect when the game starts)
+function announceHistory(firstQuarter) {
+  if (!isHistorical()) return;
+  const key = calendarOf().key;
+  for (const h of activeHistory()) {
+    if (!firstQuarter && h.from !== key) continue;
+    if (h.kind === "rates") logLine(`RATES: ${h.name}. ${h.text}`, null, "history");
+    else logLine(`${calendarOf().year}: ${h.name}. ${h.text}`, null, "history");
+  }
 }
 
 function startEvent(e) {

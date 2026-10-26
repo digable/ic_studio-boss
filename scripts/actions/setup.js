@@ -6,7 +6,7 @@ const STARTER_CARDS = [
   { type: "DIRECTOR", weight: 20 },
   { type: "INVESTOR", weight: 20 }
 ];
-const INVESTOR_CASH = 15;
+const INVESTOR_CASH = 40;
 const AI_STYLES = ["BLOCKBUSTER", "INDIE", "BALANCED"];
 
 function makeWriter() {
@@ -37,7 +37,9 @@ function makeTalent(role, { rookie = false } = {}) {
 function addTalent(t) { state.talent[t.id] = t; return t; }
 
 function makeScript() {
-  const genre = pick(GENRE_KEYS);
+  // Writers follow the trends: hot genres show up on the market more often
+  const trend = state.event || state.settings ? eventMods().genreMult : {};
+  const genre = weightedPick(GENRE_KEYS, (g) => Math.pow(trend[g] ?? 1, 2));
   const writers = Object.values(state.writers);
   const writer = writers.length && chance(0.6) ? pick(writers) : makeWriter();
   const quality = Math.round(25 + ((Math.random() + Math.random()) / 2) * 65);
@@ -51,7 +53,8 @@ function makeScript() {
     writerId: writer.id,
     roles: [...roles],
     shoot,
-    price: Math.max(2, Math.round(1 + quality / 10 + writer.rep + randInt(0, 2))),
+    // Spec script sales: a few hundred thousand for most, a few million for the hottest
+    price: Math.max(0.1, Math.round((0.1 + Math.pow(quality / 100, 3) * 2.5 + writer.rep * 0.15 + Math.random() * 0.3) * 20) / 20),
     logline: freshLogline(genre),
     age: 0
   };
@@ -67,18 +70,23 @@ function freshLogline(genre) {
   return pick(unused.length ? unused : LOGLINES[genre]);
 }
 
-function projectFromScript(s) {
+// A package is a project that may not have a script yet: you can start from a
+// location or from talent and find the script later.
+const PACKAGE_ROLES = ["LEAD", "COLEAD"];
+
+function blankProject(title) {
   return {
     id: newId("F"),
-    title: s.title,
-    genre: s.genre,
-    quality: s.quality,
-    writerId: s.writerId,
-    roles: [...s.roles],
-    shoot: s.shoot,
-    logline: s.logline,
+    hasScript: false,
+    title,
+    genre: null,
+    quality: 0,
+    writerId: null,
+    roles: [...PACKAGE_ROLES],
+    shoot: 0,
+    logline: "No script yet. Sign talent or scout a location now, and win a script for this package later.",
     director: null,
-    cast: s.roles.map(() => null),
+    cast: PACKAGE_ROLES.map(() => null),
     location: null,
     budget: null,
     status: STATUS.DEV,
@@ -101,6 +109,30 @@ function projectFromScript(s) {
     rewrites: 0
   };
 }
+
+// Puts a script into a project. Stars already attached fill the script's roles
+// by fame; anyone left over is returned (the caller puts them under contract).
+function attachScript(f, s) {
+  f.hasScript = true;
+  f.title = s.title;
+  f.genre = s.genre;
+  f.quality = s.quality;
+  f.writerId = s.writerId;
+  f.shoot = s.shoot;
+  f.logline = s.logline;
+  const stars = f.cast.filter(Boolean).sort((a, b) => talentById(b).fame - talentById(a).fame);
+  f.roles = [...s.roles];
+  f.cast = f.roles.map((_, i) => stars[i] || null);
+  return stars.slice(f.roles.length);
+}
+
+function projectFromScript(s) {
+  const f = blankProject(s.title);
+  attachScript(f, s);
+  return f;
+}
+
+function hasScript(f) { return f.hasScript !== false; }
 
 function scriptMarketSize() { return Math.max(MARKET_SIZE.scripts, state.players.length + 1); }
 
@@ -181,10 +213,14 @@ function newGameState(config) {
     phase: "PLANNING",
     quarter: 0,
     totalQuarters: (GAME_LENGTHS[config.length] || GAME_LENGTHS.STANDARD).quarters,
+    hostIndex: Math.max(0, config.players.findIndex((p) => !p.ai)),   // who may end an endless game
     settings: {
       length: GAME_LENGTHS[config.length] ? config.length : "STANDARD",
       scandals: !!config.scandals,
-      timer: TIMER_OPTIONS.includes(Number(config.timer)) ? Number(config.timer) : 0
+      timer: TIMER_OPTIONS.includes(Number(config.timer)) ? Number(config.timer) : 0,
+      // Real-history mode: the calendar year the game starts in (null = fictional present day)
+      startYear: Number(config.startYear) >= HISTORY_START_YEAR && Number(config.startYear) <= Number(CPI_LAST.slice(0, 4))
+        ? Number(config.startYear) : null
     },
     planningDeadline: null,
     players: [],

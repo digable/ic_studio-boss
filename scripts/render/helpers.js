@@ -2,7 +2,62 @@
 
 const h = escapeHtml;
 
+// Money tied up in sealed offers and pending greenlights (already taken out of cash)
+function committedCash(pi) {
+  const offers = state.offers.filter((o) => o.pi === pi).reduce((n, o) => n + (o.kind === "SCRIPT" ? o.amount : o.fee), 0);
+  const gl = state.players[pi].projects.reduce((n, f) => n + (f.pendingGreenlight?.escrow || 0), 0);
+  return roundMoney(offers + gl);
+}
+function upkeepDue(p) { return roundMoney(OVERHEAD + p.debt * LOAN_INTEREST * (eventMods().interestMult || 1)); }
+function loanRoom(p) { return Math.max(0, MAX_DEBT - p.debt); }
+
+// "Bank $40M · this costs $12M → $28M left" with a shortfall warning
+function bankLine(cost = null) {
+  const p = me();
+  const after = cost === null ? null : roundMoney(p.cash - cost);
+  return `<div class="bank-line ${after !== null && after < 0 ? "bank-line--short" : ""}">
+    🏦 Bank <strong>${fmtMoney(p.cash)}</strong>
+    ${after !== null ? ` · costs ${fmtMoney(cost)} → ${after < 0 ? `<strong>short ${fmtMoney(-after)}</strong>` : `${fmtMoney(after)} left`}` : ""}
+    <button class="small" data-act="open-finance">Need money?</button>
+  </div>`;
+}
+
+// Money inputs are typed in the dollars shown on screen ($M, or $K for small sums in old eras)
+// and converted back to the engine's today's-dollar $M.
+function moneyInput(attr, id, amount, disabled) {
+  const shown = amount * priceLevel();
+  const unit = shown < 1 ? "K" : "M";
+  const value = unit === "K" ? Math.ceil(shown * 1000) : Math.ceil(shown * 100) / 100;
+  return `<span class="money-input">$<input type="number" min="0" step="${unit === "K" ? 1 : 0.1}" value="${value}" ${attr}="${id}" data-unit="${unit}" ${disabled ? "disabled" : ""} />${unit}</span>`;
+}
+function readMoneyInput(el) {
+  if (!el) return NaN;
+  return Number(el.value) / (el.dataset.unit === "K" ? 1000 : 1) / priceLevel();
+}
+
+// "Sci-Fi ×1.35 · box office ×0.8 · no new scripts" — what a history entry does, in words
+function describeMods(m) {
+  const pct = (x) => `${x >= 1 ? "+" : "−"}${Math.round(Math.abs(x - 1) * 100)}%`;
+  const out = [];
+  if (m.boxOfficeMult) out.push(`box office ${pct(m.boxOfficeMult)}`);
+  Object.entries(m.genreMult || {}).forEach(([g, x]) => out.push(`${GENRES[g].name} ${pct(x)}`));
+  if (m.summerMult) out.push(`summer box office ${pct(m.summerMult)}`);
+  if (m.indieMult) out.push(`indie audiences ${pct(m.indieMult)}`);
+  if (m.budgetMult) out.push(`budgets ${pct(m.budgetMult)}`);
+  if (m.pitchMult) out.push(`investor money ${pct(m.pitchMult)}`);
+  if (m.criticBonus) out.push(`critics +${m.criticBonus}`);
+  if (m.libraryIncome) out.push(`library films earn ${fmtMoney(m.libraryIncome)}/qtr each`);
+  if (m.strike) out.push("no new scripts or rewrites");
+  if (m.actorsStrike || m.filmingPause) out.push("no shoots start; shoots pause");
+  return out.join(" · ");
+}
+
+function loanRatePerYear() {
+  return LOAN_INTEREST * 4 * (eventMods().interestMult ?? 1) * 100;
+}
+
 function genreBadge(genre) {
+  if (!genre) return `<span class="genre-badge genre-badge--none">Package</span>`;
   return `<span class="genre-badge" style="--genre:var(--genre-${genre})">${h(GENRES[genre].name)}</span>`;
 }
 

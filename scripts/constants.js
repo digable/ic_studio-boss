@@ -1,23 +1,35 @@
 // All immutable game configuration. Loads first (browser and server engine).
+//
+// MONEY: every amount in the engine is in millions of US dollars at TODAY'S prices
+// (the latest CPI quarter in scripts/data/real/cpi.js). In a real-history game the UI converts
+// to the dollars of the year being played with the CPI. The magnitudes below are game-design
+// estimates of real industry figures — see DATA_SOURCES.md.
 
 const GAME_NAME = "IC Studio Boss";
 
 const MAX_PLAYERS = 6;
-const STARTING_CASH = 40;
+const STARTING_CASH = 120;
 const STARTING_HAND = 3;          // starter cards dealt to each studio
 const BASE_AP = 3;                // action points per quarter
 const MAX_BONUS_AP = 2;           // +1 AP per A-list star on your books, up to this many
 const A_LIST_FAME = 7;
-const OVERHEAD = 2;               // $M per quarter
-const LOAN_SIZE = 20;
-const REPAY_SIZE = 10;
-const MAX_DEBT = 100;
-const LOAN_INTEREST = 0.05;       // per quarter
-const PRESTIGE_VALUE = 10;        // studio value per prestige point
+const OVERHEAD = 3;               // $M per quarter
+const LOAN_SIZE = 50;
+const REPAY_SIZE = 25;
+const MAX_DEBT = 300;
+const BANKRUPTCY_CASH = 15;         // a studio still broke after maxing its loans restructures:
+const BANKRUPTCY_PRESTIGE = 3;     // debt halved, cash reset to this, prestige lost
+const LOAN_INTEREST = 0.02;       // per quarter (about 8% a year)
+const PRESTIGE_VALUE = 25;        // studio value per prestige point
 const LIBRARY_RATE = 0.1;         // studio value per $ of lifetime gross
 const RUN_LENGTH = 3;             // quarters a film stays in theaters
+const STUDIO_SHARE = 0.5;         // share of worldwide gross the studio keeps (theaters keep the rest)
 const INVESTOR_SHARE = 0.15;      // cut of gross taken by investors after a pitch
-const REWRITE_COST = 2;
+const COFINANCE_BUDGET = 0.5;     // a co-financing partner pays this share of the budget…
+const COFINANCE_SHARE = 0.25;     // …for this cut of the box office
+const MAX_INVESTOR_SHARE = 0.6;
+const REWRITE_COST = 0.3;
+const MAX_EMPTY_PACKAGES = 2;     // packages without a script at once
 const HAND_LIMIT = 3;
 const MAX_LOG = 120;
 const ACCEPT_THRESHOLD = 0;       // talent signs if appeal >= this
@@ -28,7 +40,8 @@ const MARKET_SIZE = { scripts: 4 };
 const GAME_LENGTHS = {
   SHORT:    { label: "Short (2 years)",    quarters: 8 },
   STANDARD: { label: "Standard (3 years)", quarters: 12 },
-  LONG:     { label: "Long (4 years)",     quarters: 16 }
+  LONG:     { label: "Long (4 years)",     quarters: 16 },
+  ENDLESS:  { label: "Endless (play until you call it a wrap)", quarters: null }
 };
 
 const TIMER_OPTIONS = [0, 60, 90, 120, 180]; // planning timer seconds, 0 = off
@@ -54,9 +67,9 @@ const GENRE_KEYS = Object.keys(GENRES);
 
 // shootMod adjusts the script's base shoot length; reach scales the audience
 const BUDGETS = {
-  INDIE:       { name: "Indie",       cost: 8,  shootMod: -1, quality: -3, reach: 0.7 },
-  STUDIO:      { name: "Studio",      cost: 20, shootMod: 0,  quality: 3,  reach: 1.0 },
-  BLOCKBUSTER: { name: "Blockbuster", cost: 45, shootMod: 1,  quality: 8,  reach: 1.5 }
+  INDIE:       { name: "Indie",       cost: 8,   shootMod: -1, quality: -3, reach: 0.36 },
+  STUDIO:      { name: "Studio",      cost: 45,  shootMod: 0,  quality: 3,  reach: 1.0 },
+  BLOCKBUSTER: { name: "Blockbuster", cost: 160, shootMod: 1,  quality: 8,  reach: 2.6 }
 };
 const BUDGET_KEYS = Object.keys(BUDGETS);
 
@@ -77,8 +90,8 @@ const UNKNOWN_SKILL = 3;          // an unfilled role is played by an unknown at
 const UNKNOWN_QUALITY_PENALTY = 4;
 
 const MARKETING = {
-  SMALL: { name: "Trailer push",     cost: 4,  hype: 10 },
-  BIG:   { name: "Full campaign",    cost: 12, hype: 28 }
+  SMALL: { name: "Trailer push",     cost: 5,  hype: 10 },
+  BIG:   { name: "Full campaign",    cost: 30, hype: 28 }
 };
 
 // Project lifecycle
@@ -108,6 +121,9 @@ const AP_COST = {
   RELEASE: 1,
   REWRITE: 1,
   PLAY_CARD: 1,
+  END_GAME: 0,
+  NEW_PACKAGE: 0,
+  SHELVE: 0,
   WITHDRAW: 0,
   ATTACH: 0,
   MARKETING: 0,

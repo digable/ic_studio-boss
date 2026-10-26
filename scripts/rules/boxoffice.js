@@ -1,6 +1,6 @@
 // Box office: how much a film in theaters earns this quarter.
 
-const BOX_OFFICE_SCALE = 0.5;
+const BOX_OFFICE_SCALE = 1.05;   // worldwide gross in $M per point of appeal (tuned with tests/sim.js)
 const RUN_WEIGHT = [1, 0.5, 0.2];   // how much a film crowds others by week of its run
 
 function filmAppeal(f, q, mods) {
@@ -8,7 +8,8 @@ function filmAppeal(f, q, mods) {
   const b = BUDGETS[f.budget];
   const dir = talentById(f.director);
   const a = f.critic * 0.35 + f.hype * 0.45 + castFame(f) * 3.5 + (dir ? dir.fame * 1.5 : 0) + 8;
-  const reach = g.indieFriendly && f.budget === "INDIE" ? 0.9 : b.reach;
+  let reach = g.indieFriendly && f.budget === "INDIE" ? b.reach * 1.3 : b.reach;
+  if (f.budget === "INDIE") reach *= mods.indieMult ?? 1;
   const craze = (mods.genreMult || {})[f.genre] ?? 1;
   return a * reach * g.appeal * g.season[seasonOf(q)] * craze;
 }
@@ -29,7 +30,8 @@ function grossFor(entry, films, q, mods) {
     if (o.project.genre === f.genre) same += w; else other += w;
   }
   const competition = 1 / (1 + 0.3 * same + 0.05 * other);
-  return round1(filmAppeal(f, q, mods) * BOX_OFFICE_SCALE * filmLegs(f) * competition * f.luck * (mods.boxOfficeMult || 1));
+  const summer = seasonOf(q) === 2 ? (mods.summerMult ?? 1) : 1;
+  return roundMoney(filmAppeal(f, q, mods) * BOX_OFFICE_SCALE * filmLegs(f) * competition * f.luck * summer * (mods.boxOfficeMult ?? 1));
 }
 
 function verdictFor(f) {

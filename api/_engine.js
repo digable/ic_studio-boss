@@ -17,6 +17,8 @@ const ROOT = path.join(__dirname, "..");
 const LOGIC_SCRIPTS = [
   "scripts/constants.js",
   "scripts/core.js",
+  "scripts/data/real/cpi.js",
+  "scripts/data/real/history.js",
   "scripts/data/names.js",
   "scripts/data/locations.js",
   "scripts/data/events.js",

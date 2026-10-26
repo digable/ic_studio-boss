@@ -1,30 +1,51 @@
-// Sidebar: Market (scripts, talent agency, locations) and Info (box office, rankings, awards, log).
-// <details> open/closed state survives re-renders via client.openSections.
+// Sidebar: Market tabs (scripts, talent, locations) and Info tabs (box office, rankings, awards, news).
 
-client.openSections = client.openSections || { scripts: true, agency: true, locations: false, boxoffice: true, rankings: true, awards: false, log: true };
+client.marketTab = client.marketTab || "scripts";
+client.infoTab = client.infoTab || "boxoffice";
 client.agencyFilter = client.agencyFilter || "STAR";
 
-function section(key, title, body) {
-  return `<details data-section="${key}" ${client.openSections[key] ? "open" : ""}><summary>${title}</summary>${body}</details>`;
+const MARKET_TABS = [
+  { key: "scripts",   label: "Scripts",   render: () => renderScriptMarket() },
+  { key: "talent",    label: "Talent",    render: () => renderAgency() },
+  { key: "locations", label: "Locations", render: () => renderLocations() }
+];
+const INFO_TABS = [
+  { key: "boxoffice", label: "Box office", render: () => renderBoxOffice() },
+  { key: "rankings",  label: "Rankings",   render: () => renderRankings() },
+  { key: "awards",    label: "Awards",     render: () => renderAwards() },
+  { key: "log",       label: "News",       render: () => renderLog() }
+];
+
+function tabGroup(title, group, tabs, current) {
+  const tab = tabs.find((t) => t.key === current) || tabs[0];
+  return `<div class="side-group">
+    <div class="side-head">
+      <h2>${title}</h2>
+      <div class="side-tabs">${tabs.map((t) =>
+        `<button class="side-tab ${t.key === tab.key ? "side-tab--on" : ""}" data-act="side-tab" data-group="${group}" data-tab="${t.key}">${t.label}</button>`).join("")}</div>
+    </div>
+    <div class="side-body">${tab.render()}</div>
+  </div>`;
 }
 
 function renderSidebar() {
-  document.getElementById("marketSection").innerHTML =
-    section("scripts", "Script market", renderScriptMarket()) +
-    section("agency", "Talent agency", renderAgency()) +
-    section("locations", "Locations", renderLocations());
-  document.getElementById("infoSection").innerHTML =
-    section("boxoffice", `Box office${state.lastReport ? ` — ${h(state.lastReport.label)}` : ""}`, renderBoxOffice()) +
-    section("rankings", "Studio rankings", renderRankings()) +
-    section("awards", "Golden Cob Awards", renderAwards()) +
-    section("log", "Trades", renderLog());
+  document.getElementById("marketSection").innerHTML = tabGroup("Market", "market", MARKET_TABS, client.marketTab);
+  document.getElementById("infoSection").innerHTML = tabGroup("Industry", "info", INFO_TABS, client.infoTab);
 }
 
 function renderScriptMarket() {
   const p = me();
   const canPlan = state.phase === "PLANNING" && !p.ready;
   if (!state.market.scripts.length) return `<div class="empty small">No scripts on the market this quarter.</div>`;
-  return `<div class="small muted">Sealed bids. Highest bid wins (prestige counts as $1M per point); ties go to initiative.</div>` +
+  // Packages still looking for a script can be the target of a bid
+  const packages = p.projects.filter((f) => f.status === STATUS.DEV && !hasScript(f) && !pendingScriptBid(f));
+  const targetSelect = (sid) => packages.length
+    ? `<select data-bid-target-for="${sid}" title="Where the script goes if you win">
+        <option value="">New project</option>
+        ${packages.map((f) => `<option value="${f.id}" ${client.bidTarget === f.id ? "selected" : ""}>For ${h(f.title)}</option>`).join("")}
+      </select>`
+    : "";
+  return bankLine() + `<div class="small muted">Sealed bids. Your bid is held from your bank until the quarter ends. Highest bid wins (prestige counts as $1M per point); ties go to initiative.</div>` +
     state.market.scripts.map((s) => {
       const myBid = state.offers.find((o) => o.pi === client.viewer && o.kind === "SCRIPT" && o.scriptId === s.id);
       return `<div class="market-card" style="--genre:var(--genre-${s.genre})">
@@ -38,9 +59,10 @@ function renderScriptMarket() {
           ${s.age ? `<span class="muted">Leaves in ${3 - s.age} qtr</span>` : ""}
         </div>
         ${myBid
-          ? `<div class="pill pill--pending">Your bid: ${fmtMoney(myBid.amount)}</div>`
+          ? `<div class="pill pill--pending">Your bid: ${fmtMoney(myBid.amount)}${myBid.projectId ? ` for ${h(findProject(myBid.projectId)?.project.title || "package")}` : ""}</div>`
           : `<div class="inline-form">Ask ${fmtMoney(s.price)}
-              <input type="number" min="${s.price}" step="1" value="${s.price}" data-bid-for="${s.id}" ${canPlan ? "" : "disabled"} />
+              ${moneyInput("data-bid-for", s.id, s.price, !canPlan)}
+              ${targetSelect(s.id)}
               <button class="small primary" data-act="bid" data-script="${s.id}" ${canPlan ? "" : "disabled"} title="1 AP">Bid</button></div>`}
       </div>`;
     }).join("");

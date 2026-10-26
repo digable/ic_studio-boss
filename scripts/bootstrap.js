@@ -24,20 +24,57 @@ const UI_ACTIONS = {
     talentId: d.talent,
     projectId: client.cast.projectId,
     slot: client.cast.slot,
-    fee: Number(selectValue("data-fee-for", d.talent))
+    fee: readMoneyInput(document.querySelector(`[data-fee-for="${d.talent}"]`))
   }),
   scout: (d) => {
     const locationId = selectValue("data-scout-for", d.project);
     if (locationId) act({ type: "SCOUT", projectId: d.project, locationId });
   },
-  greenlight: (d) => act({ type: "GREENLIGHT", projectId: d.project, budget: selectValue("data-budget-for", d.project) }),
+  greenlight: (d) => act({
+    type: "GREENLIGHT",
+    projectId: d.project,
+    budget: selectValue("data-budget-for", d.project),
+    cofinance: !!document.querySelector(`[data-cofinance-for="${d.project}"]`)?.checked
+  }),
+  "open-finance": () => openFinanceDialog({}),
+  "finance-retry": async () => {
+    const r = await act(client.finance.action);
+    if (r?.ok) document.getElementById("financeDialog").close();
+  },
+  "finance-cofinance": async () => {
+    const r = await act({ ...client.finance.action, cofinance: true });
+    if (r?.ok) document.getElementById("financeDialog").close();
+  },
   "cancel-greenlight": (d) => act({ type: "GREENLIGHT", projectId: d.project, cancel: true }),
   rewrite: (d) => act({ type: "REWRITE", projectId: d.project }),
   pitch: (d) => act({ type: "PITCH", projectId: d.project }),
   release: (d) => act({ type: "RELEASE", projectId: d.project }),
   market: (d) => act({ type: "MARKETING", projectId: d.project, size: d.size }),
-  bid: (d) => act({ type: "BID_SCRIPT", scriptId: d.script, amount: Number(selectValue("data-bid-for", d.script)) }),
+  bid: (d) => act({
+    type: "BID_SCRIPT",
+    scriptId: d.script,
+    amount: readMoneyInput(document.querySelector(`[data-bid-for="${d.script}"]`)),
+    projectId: selectValue("data-bid-target-for", d.script) || null
+  }),
+  "new-package": () => act({ type: "NEW_PACKAGE" }),
+  shelve: (d) => {
+    const f = findProject(d.project)?.project;
+    if (f && confirm(`Shelve "${f.title}"? Money spent is gone; attached people stay under contract.`)) act({ type: "SHELVE", projectId: d.project });
+  },
+  "attach-quick": (d) => act({ type: "ATTACH", talentId: d.talent, projectId: d.project, slot: d.slot === "DIRECTOR" ? d.slot : Number(d.slot) }),
+  "goto-scripts": (d) => {
+    client.bidTarget = d.project || null;
+    client.marketTab = "scripts";
+    setTab("market");
+    render();
+    document.getElementById("marketSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (d.project) toast(`Pick a script for "${findProject(d.project)?.project.title}" and bid.`);
+  },
   "studio-view": (d) => { client.studioView = d.view; render(); },
+  "end-game": () => {
+    if (confirm("Call it a wrap? The game ends for everyone and final standings are shown.")) act({ type: "END_GAME" });
+  },
+  "side-tab": (d) => { client[d.group === "market" ? "marketTab" : "infoTab"] = d.tab; render(); },
   "agency-filter": (d) => { client.agencyFilter = d.role; render(); },
   "show-results": () => openResultsDialog(),
   "close-dialog": (d, el) => {
@@ -57,12 +94,6 @@ document.addEventListener("click", (e) => {
   const fn = UI_ACTIONS[el.dataset.act];
   if (fn) { e.preventDefault(); fn(el.dataset, el); }
 });
-
-// Remember which sidebar sections are open across re-renders
-document.addEventListener("toggle", (e) => {
-  const key = e.target.dataset?.section;
-  if (key) client.openSections[key] = e.target.open;
-}, true);
 
 document.addEventListener("input", (e) => {
   if (e.target.dataset.feeFor) updateAppealPreview(e.target);
@@ -95,7 +126,22 @@ function refreshTitleScreen() {
   renderLocalPlayers();
 }
 
+// "history" era -> the chosen start year (clamped to the data we have), otherwise null
+function eraStartYear(prefix) {
+  if (document.getElementById(`${prefix}Era`).value !== "history") return null;
+  const max = Number(CPI_LAST.slice(0, 4));
+  return clamp(Math.round(Number(document.getElementById(`${prefix}Year`).value) || 1980), HISTORY_START_YEAR, max);
+}
+
 function initTitleScreen() {
+  document.querySelectorAll(".era-select").forEach((sel) => sel.addEventListener("change", () => {
+    document.getElementById(sel.dataset.year).classList.toggle("hidden", sel.value !== "history");
+  }));
+  ["localYear", "onlineYear"].forEach((id) => {
+    const el = document.getElementById(id);
+    el.min = HISTORY_START_YEAR;
+    el.max = CPI_LAST.slice(0, 4);
+  });
   const lengths = Object.entries(GAME_LENGTHS).map(([k, v]) => [k, v.label]);
   fillSelect("localLength", lengths, "STANDARD");
   fillSelect("onlineLength", lengths, "STANDARD");
@@ -123,6 +169,7 @@ function initTitleScreen() {
       players: [...humans, ...Array.from({ length: aiCount }, (_, i) => ({ name: `AI ${i + 1}`, ai: true }))],
       length: document.getElementById("localLength").value,
       scandals: document.getElementById("localScandals").checked,
+      startYear: eraStartYear("local"),
       timer: 0
     });
   });

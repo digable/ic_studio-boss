@@ -44,6 +44,7 @@ function writerFit(f, budgetKey) {
 // Expected quality (before the random factor) as [{ label, value }]
 function qualityBreakdown(f, budgetKey) {
   const items = [];
+  if (!hasScript(f)) return items;
   const add = (label, v) => { const r = Math.round(v); if (r) items.push({ label, value: r }); };
   const d = talentById(f.director);
   const w = writerById(f.writerId);

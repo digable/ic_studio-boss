@@ -8,7 +8,8 @@ function randRange(min, max) { return min + Math.random() * (max - min); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function chance(p) { return Math.random() < p; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-function round1(n) { return Math.round(n * 10) / 10; }
+// Money is kept to the nearest $1K (engine amounts are $M) so 1930s-sized sums stay exact
+function roundMoney(n) { return Math.round(n * 1000) / 1000; }
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -23,20 +24,70 @@ function weightedPick(items, weightOf) {
   return items[items.length - 1];
 }
 
-function fmtMoney(n) {
-  const v = round1(n);
+// --- calendar & inflation ---------------------------------------------------------------------
+// Fictional games run in today's dollars. Real-history games start in settings.startYear and walk
+// through real calendar quarters; money is shown in that quarter's dollars using the BLS CPI-U.
+
+function isHistorical() { return !!(state && state.settings && state.settings.startYear); }
+
+function calendarOf(q = state.quarter) {
+  const year = state.settings.startYear + Math.floor(q / 4);
+  return { year, qtr: q % 4, key: `${year}-Q${(q % 4) + 1}` };
+}
+
+function quarterIndexOfKey(key) {
+  const [y, qn] = key.split("-Q");
+  return Number(y) * 4 + Number(qn) - 1;
+}
+
+// CPI for a calendar quarter. After the last published quarter it is projected forward at the
+// average quarterly rate of the previous ten years; before 1913 it is held at the first value.
+function cpiForKey(key) {
+  if (CPI_QUARTERLY[key] !== undefined) return CPI_QUARTERLY[key];
+  const idx = quarterIndexOfKey(key);
+  const last = quarterIndexOfKey(CPI_LAST);
+  if (idx < quarterIndexOfKey(CPI_FIRST)) return CPI_QUARTERLY[CPI_FIRST];
+  const base = CPI_QUARTERLY[CPI_LAST];
+  const tenYearsBack = `${Math.floor((last - 40) / 4)}-Q${((last - 40) % 4) + 1}`;
+  const perQuarter = Math.pow(base / CPI_QUARTERLY[tenYearsBack], 1 / 40);
+  return base * Math.pow(perQuarter, idx - last);
+}
+function isProjectedCpi(q = state.quarter) {
+  return isHistorical() && quarterIndexOfKey(calendarOf(q).key) > quarterIndexOfKey(CPI_LAST);
+}
+
+// Multiply today's dollars by this to get the dollars of quarter q
+function priceLevel(q = state ? state.quarter : 0) {
+  if (!isHistorical()) return 1;
+  return cpiForKey(calendarOf(q).key) / CPI_QUARTERLY[CPI_LAST];
+}
+
+// Engine amounts are $M in today's dollars; shown in the dollars of the quarter being played.
+// opts.today: show in today's dollars instead.
+function fmtMoney(n, opts = {}) {
+  const v = n * (opts.today ? 1 : priceLevel());
   const abs = Math.abs(v);
-  const s = Number.isInteger(abs) ? String(abs) : abs.toFixed(1);
-  return `${v < 0 ? "-" : ""}$${s}M`;
+  const trim = (s) => s.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+  let s;
+  if (abs >= 1000) s = `$${trim((abs / 1000).toFixed(2))}B`;
+  else if (abs >= 100) s = `$${Math.round(abs)}M`;
+  else if (abs >= 1) s = `$${trim(abs.toFixed(1))}M`;
+  else if (abs >= 0.001) s = `$${Math.round(abs * 1000)}K`;
+  else s = `$${Math.round(abs * 1e6).toLocaleString("en-US")}`;
+  return (v < 0 && s !== "$0" ? "-" : "") + s;
 }
 
 function newId(prefix) { return `${prefix}${state.nextId++}`; }
 
 function quarterLabel(q) {
+  if (isHistorical()) return `${calendarOf(q).year} ${QUARTERS[q % 4].short} ${QUARTERS[q % 4].name}`;
   return `Y${Math.floor(q / 4) + 1} ${QUARTERS[q % 4].short} ${QUARTERS[q % 4].name}`;
 }
 function seasonOf(q) { return q % 4; }
-function quartersRemaining() { return state.totalQuarters - 1 - state.quarter; }
+// Endless games have no last quarter (totalQuarters is null)
+function isEndless() { return state.totalQuarters == null; }
+function quartersRemaining() { return isEndless() ? 99 : state.totalQuarters - 1 - state.quarter; }
+function isLastQuarter(q = state.quarter) { return !isEndless() && q >= state.totalQuarters - 1; }
 
 function logLine(text, pi = null, cls = "") {
   state.log.push({ q: state.quarter, text, pi, cls });
@@ -71,7 +122,7 @@ function attachedTalentIds(f) {
 function isActive(f) { return f.status !== STATUS.LIBRARY; }
 
 function studioValue(p) {
-  return round1(p.cash - p.debt + p.prestige * PRESTIGE_VALUE + p.lifetimeGross * LIBRARY_RATE);
+  return roundMoney(p.cash - p.debt + p.prestige * PRESTIGE_VALUE + p.lifetimeGross * LIBRARY_RATE);
 }
 
 function apFor(pi) {

@@ -149,7 +149,8 @@ async function startOnlineGame() {
           aiCount: Number(document.getElementById("onlineAi").value) || 0,
           length: document.getElementById("onlineLength").value,
           timer: Number(document.getElementById("onlineTimer").value) || 0,
-          scandals: document.getElementById("onlineScandals").checked
+          scandals: document.getElementById("onlineScandals").checked,
+          startYear: eraStartYear("online")
         }
       }
     });
@@ -193,6 +194,7 @@ function applyServerState(s, force = false) {
     mp.inGame = true;
     client.mode = "online";
     client.lastReportQuarter = state.lastReport?.quarter ?? null;
+    client.shownFinal = false;
     const rc = document.getElementById("roomCode");
     rc.textContent = `Room ${mp.code}`;
     rc.classList.remove("hidden");

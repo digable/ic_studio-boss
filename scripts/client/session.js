@@ -27,12 +27,14 @@ function toast(msg, isError = false) {
   toastTimer = setTimeout(() => el.classList.remove("toast--visible"), isError ? 4500 : 3000);
 }
 
+// Sends an action and returns { ok, msg, code?, need? }. A cash shortfall opens the financing panel.
 async function act(action) {
-  if (!state || client.busy) return;
+  if (!state || client.busy) return null;
+  let r = null;
   if (isOnline()) {
     client.busy = true;
     try {
-      const r = await mpSendAction(action);
+      r = await mpSendAction(action);
       if (r.state) applyServerState(r.state, true);
       toast(r.msg, !r.ok);
     } catch (e) {
@@ -42,11 +44,13 @@ async function act(action) {
     }
   } else {
     const quarterBefore = state.quarter;
-    const r = applyAction(client.viewer, action);
+    r = applyAction(client.viewer, action);
     toast(r.ok && state.quarter !== quarterBefore ? `${quarterLabel(state.quarter)} begins.` : r.msg, !r.ok);
     if (r.ok) afterLocalChange(quarterBefore);
   }
+  if (r && !r.ok && r.code === "CASH") openFinanceDialog({ action, need: r.need, label: r.msg });
   render();
+  return r;
 }
 
 function afterLocalChange(quarterBefore) {
@@ -69,6 +73,13 @@ function afterLocalChange(quarterBefore) {
 
 function maybeShowResults() {
   const r = state?.lastReport;
+  // Game over (including an endless game called early): always show the final standings once
+  if (state?.phase === "GAME_OVER" && !client.shownFinal) {
+    client.shownFinal = true;
+    client.lastReportQuarter = r?.quarter ?? null;
+    openResultsDialog();
+    return;
+  }
   if (!r || r.quarter === client.lastReportQuarter) return;
   client.lastReportQuarter = r.quarter;
   client.passAfterResults = true;
@@ -87,6 +98,7 @@ function startLocalGame(config) {
   client.mode = "local";
   client.viewer = humanIndexes()[0] ?? 0;
   client.lastReportQuarter = null;
+  client.shownFinal = false;
   saveLocal();
   enterGameScreen();
   if (isHotSeat()) showPassScreen(client.viewer);
@@ -96,6 +108,7 @@ function enterGameScreen() {
   document.getElementById("titleScreen").classList.add("hidden");
   document.getElementById("gameScreen").classList.remove("hidden");
   document.getElementById("mobileTabs").classList.remove("hidden");
+  document.getElementById("moneyBar").classList.remove("hidden");
   document.getElementById("quitBtn").classList.remove("hidden");
   setTab("studio");
   render();
@@ -106,6 +119,7 @@ function exitToTitle() {
   client.mode = null;
   document.getElementById("gameScreen").classList.add("hidden");
   document.getElementById("mobileTabs").classList.add("hidden");
+  document.getElementById("moneyBar").classList.add("hidden");
   document.getElementById("quitBtn").classList.add("hidden");
   document.getElementById("roomCode").classList.add("hidden");
   document.getElementById("titleScreen").classList.remove("hidden");

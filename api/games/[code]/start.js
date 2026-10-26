@@ -1,4 +1,4 @@
-// POST /api/games/:code/start  (host only)  { hostId, settings: { aiCount, length, scandals, timer } }
+// POST /api/games/:code/start  (host only)  { hostId, settings: { aiCount, length, scandals, timer, startYear } }
 // The server builds the starting state with the shared rules.
 
 const { db, getSession } = require("../../_db");
@@ -35,6 +35,7 @@ module.exports = async function handler(req, res) {
         players: [...humans, ...ai],
         length: settings.length,
         scandals: !!settings.scandals,
+        startYear: settings.startYear ?? null,
         timer: settings.timer
       }));
 

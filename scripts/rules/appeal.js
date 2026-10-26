@@ -13,10 +13,12 @@ function openSlots(f) {
   return slots;
 }
 
+// Fees rise steeply with fame, like real pay: unknowns work for a few hundred thousand,
+// the biggest stars ask $20M+ (today's dollars). Skill nudges the price.
 function askingFee(t, roleKey = "LEAD") {
-  if (t.role === "DIRECTOR") return Math.max(1, Math.round(1 + t.skill * 0.6 + t.fame * 0.5));
-  const base = 1 + t.skill * 0.4 + t.fame * 1.0;
-  return Math.max(1, Math.round(base * (ROLES[roleKey] || ROLES.LEAD).feeMult));
+  if (t.role === "DIRECTOR") return Math.max(0.1, roundMoney(0.2 * Math.pow(1.5, t.fame) * (0.8 + t.skill * 0.04)));
+  const base = 0.25 * Math.pow(1.55, t.fame) * (0.85 + t.skill * 0.03);
+  return Math.max(0.1, roundMoney(base * (ROLES[roleKey] || ROLES.LEAD).feeMult));
 }
 function askingFeeFor(t, f, slot) { return askingFee(t, slot === "DIRECTOR" ? "LEAD" : f.roles[slot]); }
 
@@ -31,7 +33,8 @@ function talentAppeal(t, f, pi, slot, fee, opts = {}) {
   const money = clamp(((fee - asking) / Math.max(asking, 1)) * 20, -30, 15);
   add(fee >= asking ? (fee > asking ? "Generous offer" : "Fair offer") : "Lowball offer", money);
 
-  if (t.likes.includes(f.genre)) add(`Loves ${GENRES[f.genre].name.toLowerCase()}`, 8);
+  if (f.genre && t.likes.includes(f.genre)) add(`Loves ${GENRES[f.genre].name.toLowerCase()}`, 8);
+  if (!hasScript(f)) add("No script yet", -4);
 
   const loc = locationById(f.location);
   if (loc) {
@@ -39,25 +42,31 @@ function talentAppeal(t, f, pi, slot, fee, opts = {}) {
     else add(`Location: ${loc.name}`, loc.draw * 1.5);
   }
 
+  // One line per attached person, combining everything about them:
+  // friendship or feud, plus how good the director is (for stars) or how famous the lead is (for directors)
   for (const id of attachedTalentIds(f)) {
     if (id === t.id) continue;
     const o = talentById(id);
-    if (t.friends.includes(id)) add(`Friends with ${o.name}`, 7);
-    if (t.rivals.includes(id)) add(`Won't work with ${o.name}`, -20);
-  }
-
-  if (t.role === "STAR" && f.director) {
-    const d = talentById(f.director);
-    add(`Director ${d.name}`, (d.skill - 5) * 1.5);
-  }
-  if (t.role === "DIRECTOR") {
-    const lead = talentById(f.cast[0]);
-    if (lead) add(`Star ${lead.name}`, (lead.fame - 5) * 1.2);
+    let v = 0;
+    const why = [];
+    if (t.friends.includes(id)) { v += 7; why.push("friends"); }
+    if (t.rivals.includes(id)) { v -= 20; why.push("feuding"); }
+    if (t.role === "STAR" && id === f.director) {
+      v += (o.skill - 5) * 1.5;
+      if (o.skill >= 7) why.push("great director");
+      else if (o.skill <= 3) why.push("weak director");
+    }
+    if (t.role === "DIRECTOR" && id === f.cast[0]) {
+      v += (o.fame - 5) * 1.2;
+      if (o.fame >= 7) why.push("big-name star");
+      else if (o.fame <= 3) why.push("small-name star");
+    }
+    if (Math.round(v)) add(`${o.name}${why.length ? `: ${why.join(", ")}` : ""}`, v);
   }
 
   const w = writerById(f.writerId);
   if (w) add(`Writer ${w.name}`, (w.rep - 2) * 2);
-  add("Script quality", (f.quality - 55) / 5);
+  if (hasScript(f)) add("Script quality", (f.quality - 55) / 5);
   add("Studio prestige", p.prestige * 1.5);
 
   const busy = p.projects.filter((x) => x.status === STATUS.DEV || x.status === STATUS.FILMING).length;
@@ -111,11 +120,17 @@ function filmingProjectAtLocation(locId) {
   return hit ? hit.project : null;
 }
 // A filming project frees its people at this quarter's resolution when it's on its last quarter
-function wrapsThisQuarter(f) { return f.status === STATUS.FILMING && f.quartersLeft <= 1; }
+function productionHalted() {
+  const m = eventMods();
+  return m.filmingPause ? "film production is shut down" : m.actorsStrike ? "the actors are on strike" : null;
+}
+function wrapsThisQuarter(f) { return f.status === STATUS.FILMING && f.quartersLeft <= 1 && !productionHalted(); }
 
 // Reasons a project couldn't start filming right now. `afterWraps` ignores shoots that wrap this quarter.
 function greenlightConflicts(f, afterWraps) {
   const out = [];
+  const halted = productionHalted();
+  if (halted) out.push(`No shoots can start — ${halted}`);
   for (const id of attachedTalentIds(f)) {
     const t = talentById(id);
     if (t.unavailable > 0) out.push(`${t.name} is unavailable this quarter`);
