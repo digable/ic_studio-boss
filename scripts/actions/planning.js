@@ -274,10 +274,14 @@ function performAction(pi, action) {
     if (state.phase !== "PLANNING") fail("The game is over.");
     const p = state.players[pi];
     if (!p) fail("Unknown studio.");
-    const handler = ACTION_HANDLERS[action?.type];
+    // Own keys only: "constructor", "toString" etc. would otherwise be found on the object's prototype
+    const type = typeof action?.type === "string" ? action.type : "";
+    const handler = Object.hasOwn(ACTION_HANDLERS, type) ? ACTION_HANDLERS[type] : null;
     if (!handler) fail("Unknown action.");
-    if (p.ready && action.type !== "READY" && action.type !== "END_GAME") fail("You're marked ready. Un-ready to keep planning.");
-    const cost = action.cancel ? 0 : AP_COST[action.type] || 0;
+    if (p.ready && type !== "READY" && type !== "END_GAME") fail("You're marked ready. Un-ready to keep planning.");
+    // Only a greenlight can be cancelled (its handler refunds the AP). On any other action the flag would
+    // make it free while the offer still records its AP, which WITHDRAW then refunds: free AP.
+    const cost = type === "GREENLIGHT" && action.cancel ? 0 : (Object.hasOwn(AP_COST, type) ? AP_COST[type] : 0);
     if (cost > p.ap) fail("No action points left this quarter.");
     const msg = handler(pi, p, action);
     p.ap -= cost;
